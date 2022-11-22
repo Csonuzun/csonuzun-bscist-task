@@ -2,10 +2,10 @@ import React from "react";
 import web3 from "./web3";
 import FurkanToken from "./FurkanToken";
 import FurkanStable from "./FurkanStable";
-import lottery from "./lottery";
 import CSONUZUAMM from "./CSONUZUAMM";
+import { ethers } from "ethers";
 
-const amm_address = "0x55B24fD7D1458a7eCA3526Dc3A01A7bb96423F4f"
+const decimals = 18
 
 class App extends React.Component {
     state = {
@@ -14,10 +14,11 @@ class App extends React.Component {
         balance: "",
         value: "",
         message: "",
-        FTKNvalue: undefined,
-        FUSDvalue: undefined,
-        amountIn: undefined,
-        tokenIn: undefined
+        ftknInput: undefined,
+        fusdInput: undefined,
+        removeLiquidityInput: undefined,
+        swapTokenInput: undefined,
+        swapAmount: undefined
 
     };
 
@@ -27,14 +28,21 @@ class App extends React.Component {
         const FurkanTokenName = await FurkanToken.methods.name().call();
         const FurkanTokenTotalSupply = await FurkanToken.methods.totalSupply().call() / 10 ** 18;
         const FurkanTokenSymbol = await FurkanToken.methods.symbol().call();
-        const FurkanToken_allowance = await FurkanToken.methods.allowance(accounts[0], amm_address).call()
+        const FurkanToken_allowance = await FurkanToken.methods.allowance(accounts[0], CSONUZUAMM._address).call() / 10 ** 18;
 
         const FurkanStableName = await FurkanStable.methods.name().call();
         const FurkanStableTotalSupply = await FurkanStable.methods.totalSupply().call() / 10 ** 18;
         const FurkanStableSymbol = await FurkanStable.methods.symbol().call();
-        const FurkanStable_allowance = await FurkanStable.methods.allowance(accounts[0], amm_address).call()
-        const total_liquidity = await CSONUZUAMM.methods.totalSupply().call()
-        this.setState({total_liquidity,
+        const FurkanStable_allowance = await FurkanStable.methods.allowance(accounts[0], CSONUZUAMM._address).call() / 10 ** 18;
+
+        const total_liquidity = await CSONUZUAMM.methods.totalSupply().call() / 10 ** 18;
+        const accountLiquidity = await CSONUZUAMM.methods.balanceOf(accounts[0]).call() / 10 ** 18;
+        const reserve0 = ethers.BigNumber.from(await CSONUZUAMM.methods.reserve0().call()); //fusd
+        const reserve1 = ethers.BigNumber.from(await CSONUZUAMM.methods.reserve1().call()); //ftkn
+        console.log("fusd reserve: ", reserve0.toString())
+        console.log("ftkn reserve: ", reserve1.toString())
+        const rate = reserve0.div(reserve1).toString();
+        this.setState({total_liquidity, accountLiquidity, reserve0, reserve1, rate,
             FurkanTokenName, FurkanTokenTotalSupply, FurkanTokenSymbol, FurkanToken_allowance,
             FurkanStable_allowance, FurkanStableName, FurkanStableTotalSupply, FurkanStableSymbol
         });
@@ -48,7 +56,7 @@ class App extends React.Component {
         this.setState({message: "Waiting on transaction success..."});
         const FurkanTokenTotalSupply = await FurkanToken.methods.totalSupply().call();
 
-        await FurkanToken.methods.approve(amm_address, FurkanTokenTotalSupply).send({
+        await FurkanToken.methods.approve(CSONUZUAMM._address, FurkanTokenTotalSupply).send({
             from: accounts[0]
         });
 
@@ -63,7 +71,7 @@ class App extends React.Component {
         this.setState({message: "Waiting on transaction success..."});
         const FurkanStableTotalSupply = await FurkanToken.methods.totalSupply().call();
         console.log(FurkanStableTotalSupply)
-        await FurkanStable.methods.approve(amm_address, FurkanStableTotalSupply).send({
+        await FurkanStable.methods.approve(CSONUZUAMM._address, FurkanStableTotalSupply).send({
             from: accounts[0]
         });
 
@@ -72,17 +80,32 @@ class App extends React.Component {
 
     onSubmitAddLiquidity = async (event) => {
         event.preventDefault();
-
         const accounts = await web3.eth.getAccounts();
+        const fusdInput = ethers.utils.parseUnits(this.state.fusdInput.toString(), decimals).toString()
+        const reserveFusd = ethers.utils.parseUnits(this.state.reserve0.toString(), decimals).toString()
+        const reserveFtkn = ethers.utils.parseUnits(this.state.reserve1.toString(), decimals).toString()
+        const rate = reserveFtkn / reserveFusd
+        const x = fusdInput * rate
+        console.log(x)
 
         this.setState({message: "Waiting on transaction success..."});
-        console.log(typeof(this.state.FUSDvalue))
-        await CSONUZUAMM.methods.addLiquidity(this.state.FTKNvalue + "000000000000000000", this.state.FUSDvalue + "000000000000000000").send({
-            from: accounts[0]
-        });
+        if(this.state.reserve0 !== 0 || this.state.reserve1 !== 0) {
+
+            await CSONUZUAMM.methods.addLiquidity(fusdInput, x.toString()).send({
+                from: accounts[0]
+            });
+
+        }
+        else{
+            await CSONUZUAMM.methods.addLiquidity(
+                ethers.utils.parseUnits(this.state.fusdInput.toString(), decimals),
+                ethers.utils.parseUnits(this.state.ftknInput.toString(), decimals))
+
+        }
+
 
         this.setState({message: "Liquidity Added Succesfully!"});
-    };
+    }
 
     onSubmitRemoveLiquidity = async (event) => {
         event.preventDefault();
@@ -90,22 +113,61 @@ class App extends React.Component {
         const accounts = await web3.eth.getAccounts();
 
         this.setState({message: "Waiting on transaction success..."});
-        const totalLiquidity = await CSONUZUAMM.methods.totalSupply().call();
-
-        await CSONUZUAMM.methods.removeLiquidity(1).send({
+        console.log("in:" , this.state.removeLiquidityInput)
+        await CSONUZUAMM.methods.removeLiquidity(ethers.utils.parseUnits(this.state.removeLiquidityInput, decimals).toString()).send({
             from: accounts[0]
         });
 
-        this.setState({message: "Liquidity Added Succesfully!"});
-    };
+        this.setState({message: this.state.removeLiquidityInput + " Shares Removed Succesfully!"});
+    }
+
+    onSubmitRemoveLiquidityAll = async (event) => {
+        event.preventDefault()
+        const accounts = await web3.eth.getAccounts();
+
+        await CSONUZUAMM.methods.removeLiquidity(await CSONUZUAMM.methods.balanceOf(accounts[0]).call()).send({
+            from: accounts[0]
+        });
+    }
+
 
     onSubmitSwap = async (event) => {
         event.preventDefault()
         const accounts = await web3.eth.getAccounts();
-
-        await CSONUZUAMM.methods.swap(this.state.tokenIn, this.state.amountIn + "000000000000000000").send({
+        this.setState({message: "Waiting on transaction success..."});
+        this.setSelectedToken();
+        let tokenInAddress = 0;
+        if (this.state.swapTokenInput === 'FUSD'){
+            tokenInAddress = FurkanStable._address
+        }
+        else {
+            tokenInAddress = FurkanToken._address
+        }
+        await CSONUZUAMM.methods.swap(tokenInAddress, this.state.swapAmount + "000000000000000000").send({
             from: accounts[0]
         });
+        this.setState({message: "Swap Succesful"});
+
+    }
+
+    setSelectedToken = (event) => {
+        const d = document.getElementById("swapTokenInput");
+        const swapToken = d.options[d.selectedIndex].text;
+        this.setState({swapTokenInput: swapToken});
+    }
+
+    test = (event) => {
+        event.preventDefault();
+        this.setSelectedToken();
+        let tokenInAddress = 0;
+        if (this.state.swapTokenInput === 'FUSD'){
+            tokenInAddress = FurkanStable._address
+        }
+        else {
+            tokenInAddress = FurkanToken._address
+        }
+        console.log(tokenInAddress)
+        console.log(this.state.swapAmount)
     }
 
 
@@ -126,7 +188,6 @@ class App extends React.Component {
                 <p>
                     Allowance: {this.state.FurkanToken_allowance}
                 </p>
-
                 <h2>--------------</h2>
                 <p>
                     Token Name: {this.state.FurkanStableName}
@@ -156,22 +217,32 @@ class App extends React.Component {
                 <form onSubmit={this.onSubmitAddLiquidity}>
                     <h4>ADD LIQUIDITY</h4>
                     <div>
-                        <label>FTKN </label>
-                        <input
-                            value={this.state.FTKNvalue}
-                            onChange={(event) => this.setState({FTKNvalue: event.target.value})}
-                        />
                         <label>FUSD </label>
                         <input
-                            value={this.state.FUSDvalue}
-                            onChange={(event) => this.setState({FUSDvalue: event.target.value})}
-                            />
+                            value={this.state.fusdInput}
+                            onChange={(event) =>
+                                this.setState({fusdInput: event.target.value})
+                                }
+                        />
+
                     </div>
                     <button>ADD LIQUIDTY</button>
                 </form>
 
                 <form onSubmit={this.onSubmitRemoveLiquidity}>
+                    <h4>Remove Liquidity</h4>
+                    <p>Your share: {this.state.accountLiquidity}</p>
+                    <input
+                        value={this.state.removeLiquidityInput}
+                        onChange={(event) =>
+                            this.setState({removeLiquidityInput: event.target.value})}
+                    />
+                    <button>Remove</button>
+                </form>
+
+                <form onSubmit={this.onSubmitRemoveLiquidityAll}>
                     <h4>Remove All Liquidity</h4>
+                    <p>Your share: {this.state.accountLiquidity}</p>
                     <button>Remove</button>
                 </form>
 
@@ -179,24 +250,23 @@ class App extends React.Component {
 
                 <hr/>
 
+                <h2>SWAP</h2>
+                <h1>Rate = {this.state.rate}</h1>
+                <form onSubmit={this.onSubmitSwap}>
+                    <label htmlFor="Tokens">Choose a token:</label>
+                    <select id="swapTokenInput" name="token">
+                        <option value="FUSD">FUSD</option>
+                        <option value="FTKN">FTKN</option>
+                    </select>
+                    <input
+                        value={this.state.swapAmount}
+                        onChange={(event) => this.setState({swapAmount: event.target.value})}
+                    />
+                    <button>Submit</button>
+                </form>
+
                 <h1>{this.state.message}</h1>
 
-                <form onSubmit={this.onSubmitSwap}>
-                    <h4>SWAP TOKENS</h4>
-                    <div>
-                        <label>WHICH TOKEN? </label>
-                        <input
-                            value={this.state.tokenIn}
-                            onChange={(event) => this.setState({tokenIn: event.target.value})}
-                        />
-                        <label>HOW MUCH</label>
-                        <input
-                            value={this.state.amountIn}
-                            onChange={(event) => this.setState({amountIn: event.target.value})}
-                        />
-                    <button>SWAP</button>
-                    </div>
-                </form>
             </div>
 
         );
