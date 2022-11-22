@@ -287,3 +287,4 @@ const FUSDabi = [
 ]
 
 export default new web3.eth.Contract(FUSDabi, address);
+
