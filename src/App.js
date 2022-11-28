@@ -3,9 +3,18 @@ import web3 from "./web3";
 import FurkanToken from "./FurkanToken";
 import FurkanStable from "./FurkanStable";
 import CSONUZUAMM from "./CSONUZUAMM";
-import { ethers } from "ethers";
+import {ethers} from "ethers";
 
 const decimals = 18
+
+function gcd_two_numbers(x, y) {
+    while (!y.isZero()) {
+        let t = y;
+        y = x.mod(y);
+        x = t;
+    }
+    return x;
+}
 
 class App extends React.Component {
     state = {
@@ -39,9 +48,10 @@ class App extends React.Component {
         const accountLiquidity = await CSONUZUAMM.methods.balanceOf(accounts[0]).call() / 10 ** 18;
         const reserve0 = ethers.BigNumber.from(await CSONUZUAMM.methods.reserve0().call()); //fusd
         const reserve1 = ethers.BigNumber.from(await CSONUZUAMM.methods.reserve1().call()); //ftkn
+        const rate = await CSONUZUAMM.methods.reserve0().call() / await CSONUZUAMM.methods.reserve1().call()
         console.log("fusd reserve: ", reserve0.toString())
         console.log("ftkn reserve: ", reserve1.toString())
-        const rate = reserve0.div(reserve1).toString();
+
         this.setState({total_liquidity, accountLiquidity, reserve0, reserve1, rate,
             FurkanTokenName, FurkanTokenTotalSupply, FurkanTokenSymbol, FurkanToken_allowance,
             FurkanStable_allowance, FurkanStableName, FurkanStableTotalSupply, FurkanStableSymbol
@@ -81,31 +91,34 @@ class App extends React.Component {
     onSubmitAddLiquidity = async (event) => {
         event.preventDefault();
         const accounts = await web3.eth.getAccounts();
-        const dx = ethers.utils.parseUnits(this.state.fusdInput.toString(), decimals)
-        const X = ethers.utils.parseUnits(this.state.reserve0.toString(), decimals)
-        const Y = ethers.utils.parseUnits(this.state.reserve1.toString(), decimals)
 
-        const dy = Y.mul(dx).div(X)
-        console.log(dy.toString())
-        console.log(X * dy === Y * dx)
+        let dx = ethers.utils.parseUnits(this.state.fusdInput.toString(), decimals)
+        const X = ethers.BigNumber.from(this.state.reserve0.toString())
+        const Y = ethers.BigNumber.from(this.state.reserve1.toString())
+        const gcd = gcd_two_numbers(X,Y)
+        console.log("gcd: ", gcd.toString())
+        const simplified_X = X.div(gcd)
+        if (dx.gte(simplified_X)) {
+            dx = dx.sub(dx.mod(simplified_X))
+        }
+
+        let dy = Y.mul(dx).div(X)
+        console.log("SX: ", simplified_X.toString())
+        console.log("dy: ", dy.toString())
+        console.log("dx: ", dx.toString())
+        console.log("X * dy === Y * dx", X.mul(dy).eq(Y.mul(dx)))
+        console.log("X * dy", X.mul(dy).toString())
+        console.log("Y * dx", Y.mul(dx).toString())
+        console.log("X * dy - Y * dx: ", X.mul(dy).sub(Y.mul(dx)).toString())
+
         this.setState({message: "Waiting on transaction success..."});
-        if(this.state.reserve0 !== 0 || this.state.reserve1 !== 0) {
 
-            await CSONUZUAMM.methods.addLiquidity(dx, dy).send({
-                from: accounts[0]
-            });
-
-        }
-        else{
-            await CSONUZUAMM.methods.addLiquidity(
-                ethers.utils.parseUnits(this.state.fusdInput.toString(), decimals),
-                ethers.utils.parseUnits(this.state.ftknInput.toString(), decimals))
-
-        }
-
-
+        await CSONUZUAMM.methods.addLiquidity(dx, dy).send({
+            from: accounts[0]
+        });
         this.setState({message: "Liquidity Added Succesfully!"});
-    }
+
+        }
 
     onSubmitRemoveLiquidity = async (event) => {
         event.preventDefault();
@@ -156,19 +169,8 @@ class App extends React.Component {
         this.setState({swapTokenInput: swapToken});
     }
 
-    test = (event) => {
-        event.preventDefault();
-        this.setSelectedToken();
-        let tokenInAddress = 0;
-        if (this.state.swapTokenInput === 'FUSD'){
-            tokenInAddress = FurkanStable._address
-        }
-        else {
-            tokenInAddress = FurkanToken._address
-        }
-        console.log(tokenInAddress)
-        console.log(this.state.swapAmount)
-    }
+
+
 
 
     render() {
