@@ -1,6 +1,6 @@
 import web3 from './web3';
 
-const amm_address = "0xF52b759a4D68899C1C15ECbF76074d98aC4315fc"
+const amm_address = "0x278BFef1e3a0c40e49Dda03B65c18902815c200B"
 
 const AMMabi = [
     {
@@ -29,6 +29,11 @@ const AMMabi = [
             {
                 "internalType": "uint256",
                 "name": "_amount1",
+                "type": "uint256"
+            },
+            {
+                "internalType": "uint256",
+                "name": "slippage_tolerance",
                 "type": "uint256"
             }
         ],
