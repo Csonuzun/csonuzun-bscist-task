@@ -101,7 +101,7 @@ class App extends React.Component {
         } else {
             tokenInAddress = FurkanToken._address
         }
-        await CSONUZUAMM.methods.swap(tokenInAddress, ethers.utils(this.state.swapAmount, decimals)).send({
+        await CSONUZUAMM.methods.swap(tokenInAddress, ethers.utils.parseUnits(this.state.swapAmount, decimals)).send({
             from: accounts[0]
         })
         this.setState({message: "Swap Succesful"})
